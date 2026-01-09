@@ -74,6 +74,7 @@
             cursor: crosshair;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             margin-bottom: 20px;
+			touch-action: none; /* Zabrání scrollování prohlížeče při dotyku na plátno */
         }
 
         /* Ovládací tlačítka */
@@ -165,6 +166,7 @@
 
     let nodes = []; // Seznam vrcholů: {id, x, y}
     let edges = []; // Seznam hran: {from: id, to: id}
+	let selectedNode = null; // Ukládá uzel, na který se kliklo jako na první
 
     let history = []; 
     const MAX_HISTORY_STEPS = 20; 
@@ -286,20 +288,22 @@
         }
 
 	// C) Kreslení vrcholů
-        nodes.forEach(node => {
-            ctx.beginPath();
-            ctx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI);
-            ctx.fillStyle = NODE_COLOR;
-            ctx.fill();
-            // Stupeň uvnitř (Místo ID vrcholu)
-            ctx.fillStyle = 'white';
-            ctx.font = '12px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(node.degree, node.x, node.y); // 
-            ctx.stroke();
-        });
-    }
+    nodes.forEach(node => {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI);
+        
+        // ZVÝRAZNĚNÍ: Pokud je uzel vybraný, bude mít jinou barvu (např. červenou)
+        ctx.fillStyle = (selectedNode && node.id === selectedNode.id) ? HIGHLIGHT_COLOR : NODE_COLOR;
+        
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(node.degree, node.x, node.y);
+        ctx.stroke();
+    });
+}
 
 let attemptCounter = 0; // Počítadlo pokusů
 
@@ -336,31 +340,54 @@ let attemptCounter = 0; // Počítadlo pokusů
         list.scrollTop = list.scrollHeight;
     }
 
-    // --- 3. FUNKCE PRO INTERAKCI (Logika myši) ---
-    
-    // Pomocná funkce: Zjisti, jestli myš klikla na existující vrchol
-    function getNodeAtPos(x, y) {
-        return nodes.find(node => {
-            // Pythagorova věta - vzdálenost kliku od středu kruhu
-            const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
-            return distance <= NODE_RADIUS;
-        });
-    }
+// --- 3. UPRAVENÁ FUNKCE PRO INTERAKCI (pro PC i MOBIL) ---
 
-// KLIKNUTÍ (Mousedown)
-    canvas.addEventListener('mousedown', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-        const clickedNode = getNodeAtPos(x, y);
+    const clickedNode = getNodeAtPos(x, y);
 
-        if (clickedNode) { 
-            // Klikl jsem na existující uzel -> Začínám táhnout hranu
-            isDragging = true;
-            dragStartNode = clickedNode;
-            logAction('start_drag', { node_id: clickedNode.id });
-        } else { // Klikl jsem do prázdna -> Vytvořím nový uzel
+    if (clickedNode) {
+        // SCÉNÁŘ A: Klikli jsme na uzel
+        if (selectedNode === null) {
+            // První kliknutí: Vybereme uzel
+            selectedNode = clickedNode;
+            logAction('select_node', { node_id: clickedNode.id });
+        } else if (selectedNode.id === clickedNode.id) {
+            // Kliknutí na ten samý uzel: Zrušíme výběr
+            selectedNode = null;
+            logAction('deselect_node', { node_id: clickedNode.id });
+        } else {
+            // Kliknutí na druhý (jiný) uzel: Vytvoříme/Smažeme hranu
+            const fromId = selectedNode.id;
+            const toId = clickedNode.id;
+
+            const existingEdgeIndex = edges.findIndex(edge => 
+                (edge.from === fromId && edge.to === toId) ||
+                (edge.from === toId && edge.to === fromId)
+            );
+
+            if (existingEdgeIndex !== -1) {
+                edges.splice(existingEdgeIndex, 1);
+                logAction('change_edge', { edge_action: 'removed', from: fromId, to: toId });
+            } else {
+                edges.push({ from: fromId, to: toId });
+                logAction('change_edge', { edge_action: 'added', from: fromId, to: toId });
+            }
+
+            updateNodeDegrees();
+            saveState();
+            selectedNode = null; // Po spojení zrušíme výběr
+        }
+    } else {
+        // SCÉNÁŘ B: Klikli jsme do prázdna
+        if (selectedNode !== null) {
+            // Pokud jsme měli vybraný uzel, kliknutím do prázdna výběr zrušíme
+            selectedNode = null;
+        } else {
+            // Vytvoříme nový uzel
             const newNode = {
                 id: nodes.length > 0 ? Math.max(...nodes.map(n => n.id)) + 1 : 1,
                 x: x,
@@ -368,73 +395,12 @@ let attemptCounter = 0; // Počítadlo pokusů
                 degree: 0 
             };
             nodes.push(newNode);
-            
-            saveState(); // Uložit nový stav po přidání uzlu
-            drawGraph(); 
-	    logAction('add_node', { node_id: newNode.id });
+            saveState();
+            logAction('add_node', { node_id: newNode.id });
         }
-    });
-
-    // POHYB (Mousemove)
-    canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        mouseX = e.clientX - rect.left;
-        mouseY = e.clientY - rect.top;
-
-        if (isDragging) {
-            drawGraph(); // Překreslujeme čáru, která následuje myš
-        }
-    });
-
-// PUŠTĚNÍ (Mouseup)
-    canvas.addEventListener('mouseup', (e) => {
-        if (isDragging) {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
-            const targetNode = getNodeAtPos(x, y);
-
-		let graphChanged = false;
-		let actionDetail = {};
-
-            // 1. Zkontrolujeme, zda jsme pustili nad uzlem A zda uzel není ten startovní
-            if (targetNode && targetNode.id !== dragStartNode.id) {
-                
-                const fromId = dragStartNode.id;
-                const toId = targetNode.id;
-
-                // 2. Najdeme index existující hrany (hrana je neorientovaná)
-                const existingEdgeIndex = edges.findIndex(edge => 
-                    (edge.from === fromId && edge.to === toId) ||
-                    (edge.from === toId && edge.to === fromId)
-                );
-
-                if (existingEdgeIndex !== -1) {
-                    // **MAZÁNÍ HRANY:** Hrana existuje, odstraníme ji.
-                    edges.splice(existingEdgeIndex, 1);
-			graphChanged = true;
-			actionDetail = { edge_action: 'removed', from: fromId, to: toId };
-                } else {
-                    // **PŘIDÁNÍ HRANY:** Hrana neexistuje, přidáme ji.
-                    edges.push({ from: fromId, to: toId });
-			graphChanged = true;
-			actionDetail = { edge_action: 'added', from: fromId, to: toId };
-                }
-
-		if (graphChanged) {
-                    updateNodeDegrees(); 
-                    saveState(); // <-- NOVÉ: Uložit stav po změně hrany
-		    logAction('change_edge', actionDetail);
-                }
-            }
-
-            isDragging = false;
-            dragStartNode = null;
-            drawGraph(); // Finální překreslení s novým stavem
-	    logAction('end_drag');
-        }
-    });
+    }
+    drawGraph();
+});
 
 
 // Smazat vše
@@ -722,6 +688,7 @@ let attemptCounter = 0; // Počítadlo pokusů
 </body>
 
 </html>
+
 
 
 
