@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pomůcka pro rozvoj metakognice</title>
+    <title>Digital Tool for Metacognitive Assessment</title>
     <style>
         /* Základní styl stránky */
         body {
@@ -123,35 +123,35 @@
 <body>
 
     <header>
-        Záhada: Které obrázky můžeme nakreslit jedním tahem?
+        Mystery: Which shapes can be drawn in one stroke?
     </header>
 
     <div id="main-container">
         
         <div id="workspace">
-            <h3>Tvoje plátno</h3>
+            <h3>Your Canvas</h3>
             <canvas id="graph-canvas" width="600" height="400"></canvas>
             
 		<div class="controls">
-                <button class="btn-clear" onclick="undoLastStep()" id="btn-undo" style="background:#888; color:white;">Krok zpět</button> 
-                <button class="btn-clear" onclick="clearGraph()">Smazat vše</button>
-                <button class="btn-test" onclick="testGraph()">Otestovat obrázek</button>
+                <button class="btn-clear" onclick="undoLastStep()" id="btn-undo" style="background:#888; color:white;">Undo</button> 
+                <button class="btn-clear" onclick="clearGraph()">Clear All</button>
+                <button class="btn-test" onclick="testGraph()">Test Image</button>
             </div>
             <div style="margin-top: 10px; display: flex; gap: 10px;">
-                <button onclick="exportLog()" style="background:#3498db; color:white;">💾 Stáhnout DATA</button>
-                <button onclick="exportVisualReport()" style="background:#3498db; color:white;">📷 Stáhnout REPORT</button>
+                <button onclick="exportLog()" style="background:#3498db; color:white;">💾 Download DATA</button>
+                <button onclick="exportVisualReport()" style="background:#3498db; color:white;">📷 Download REPORT</button>
             </div>
 
-            <p><i>Klikni pro bod, táhni myší pro čáru.</i></p>
+            <p><i>Click for a node. To connect, click one node and then another.</i></p>
         </div>
 
         <div id="history-panel">
-            <div id="history-header">Tvé minulé pokusy</div>
+            <div id="history-header">Your past attempts</div>
             <div id="history-list">
                 <div class="history-item">
-                    <strong>Pokus č. 0 (Ukázka)</strong>
-                    Výsledek: <span style="color:green">JDE TO</span><br>
-                    <small>Čas přemýšlení: --</small>
+                    <strong>Pokus č. 0 (Sample)</strong>
+                    Result: <span style="color:green">PASS</span><br>
+                    <small>Thinking Time: --</small>
                 </div>
             </div>
         </div>
@@ -314,7 +314,7 @@ let attemptCounter = 0; // Počítadlo pokusů
 
         // 2. Připravíme HTML pro jeden záznam
         const statusClass = success ? 'status-ok' : 'status-fail';
-        const statusText = success ? 'JDE TO' : 'NEJDE TO';
+        const statusText = success ? 'PASS' : 'FAIL';
         
         // Časová značka (pro realističnost)
         const now = new Date();
@@ -322,8 +322,8 @@ let attemptCounter = 0; // Počítadlo pokusů
 
         const html = `
             <div class="history-item">
-                <strong>Pokus č. ${attemptCounter}</strong> <small>(${timeString})</small><br>
-                Výsledek: <span class="${statusClass}">${statusText}</span><br>
+                <strong>Attempt No. ${attemptCounter}</strong> <small>(${timeString})</small><br>
+                Result: <span class="${statusClass}">${statusText}</span><br>
                 <small>${message}</small>
                 <img src="${dataUrl}" class="history-img">
             </div>
@@ -701,7 +701,7 @@ canvas.addEventListener('mousedown', (e) => {
             // Formátování detailů do čitelné podoby
             if (row.thinktime_ms) details += `<strong>Thinktime:</strong> ${row.thinktime_ms} ms<br>`;
             if (row.action === 'test_graph') {
-                details += `Výsledek: <span class="${row.result}">${row.result}</span><br>`;
+                details += `Result: <span class="${row.result}">${row.result}</span><br>`;
                 details += `VOTAT: ${row.votat ? 'ANO' : 'NE'}<br>`;
             }
             if (row.action === 'scroll_end') details += `Délka scrollování: ${row.duration_ms} ms`;
@@ -738,6 +738,7 @@ canvas.addEventListener('mousedown', (e) => {
 </body>
 
 </html>
+
 
 
 
