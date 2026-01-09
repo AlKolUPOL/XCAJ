@@ -340,6 +340,57 @@ let attemptCounter = 0; // Počítadlo pokusů
         list.scrollTop = list.scrollHeight;
     }
 
+	// --- POMOCNÉ FUNKCE PRO INTERAKCI ---
+
+// 1. Funkce, která zjistí, zda je na daných souřadnicích uzel
+function getNodeAtPos(x, y) {
+    // Projdeme všechny uzly a zkusíme, jestli x,y leží uvnitř kruhu uzlu
+    return nodes.find(node => {
+        const dx = node.x - x;
+        const dy = node.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < NODE_RADIUS + 5; // Malá rezerva pro snazší trefení na mobilu
+    });
+}
+
+// 2. Funkce pro vykreslení (ujistěte se, že používá selectedNode pro zvýraznění)
+function drawGraph() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Kreslení hran
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = EDGE_COLOR;
+    edges.forEach(edge => {
+        const start = nodes.find(n => n.id === edge.from);
+        const end = nodes.find(n => n.id === edge.to);
+        if (start && end) {
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+        }
+    });
+
+    // Kreslení vrcholů
+    nodes.forEach(node => {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI);
+        
+        // Pokud je uzel vybraný (čeká na spojení), změní barvu
+        ctx.fillStyle = (selectedNode && node.id === selectedNode.id) ? HIGHLIGHT_COLOR : NODE_COLOR;
+        
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(node.degree, node.x, node.y);
+        ctx.strokeStyle = '#2c3e50';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    });
+}
+
 // --- 3. UPRAVENÁ FUNKCE PRO INTERAKCI (pro PC i MOBIL) ---
 
 canvas.addEventListener('mousedown', (e) => {
@@ -688,6 +739,7 @@ canvas.addEventListener('mousedown', (e) => {
 </body>
 
 </html>
+
 
 
 
