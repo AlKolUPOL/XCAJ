@@ -485,7 +485,7 @@ canvas.addEventListener('mousedown', (e) => {
     function testGraph() {
         // 1. Pojistka: Prázdný graf
         if (nodes.length < 2 || edges.length === 0) {
-            alert("Nakresli alespoň dva body a jednu čáru.");
+            alert("Draw at least two nodes and one line.");
             logAction('test_graph', { result: 'fail', reason: 'empty_graph' });
             return;
         }
@@ -738,6 +738,7 @@ canvas.addEventListener('mousedown', (e) => {
 </body>
 
 </html>
+
 
 
 
