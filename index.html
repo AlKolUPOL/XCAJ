@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomůcka pro rozvoj metakognice</title>
+    <style>
+        /* Základní styl stránky */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f4f8;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden; /* Zabrání scrollování celé stránky */
+        }
+
+        header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 1.2em;
+        }
+
+        /* Hlavní kontejner rozdělující obrazovku na dvě části */
+        #main-container {
+            display: flex;
+            flex: 1;
+            height: 100%;
+        }
+
+        /* LEVÁ ČÁST: Pracovní plocha (Experiment) */
+        #workspace {
+            flex: 2; /* Zabírá 2/3 šířky */
+            background-color: #ffffff;
+            border-right: 5px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        /* PRAVÁ ČÁST: Historie (Storehouse dle Veenmana) */
+        #history-panel {
+            flex: 1; /* Zabírá 1/3 šířky */
+            background-color: #e8e8e8;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid #999;
+        }
+
+        #history-header {
+            background-color: #dcdcdc;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+            border-bottom: 2px solid #aaa;
+        }
+
+        /* Zde se bude scrollovat - klíčové pro měření metakognice */
+        #history-list {
+            flex: 1;
+            overflow-y: auto; /* Umožní scrollování */
+            padding: 10px;
+        }
+
+        /* Styl pro samotné plátno (Canvas) */
+        #graph-canvas {
+            border: 2px dashed #333;
+            background-color: #fafafa;
+            cursor: crosshair;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        /* Ovládací tlačítka */
+        .controls {
+            display: flex;
+            gap: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-test { background-color: #27ae60; color: white; font-weight: bold; }
+        .btn-test:hover { background-color: #219150; }
+        
+        .btn-clear { background-color: #e74c3c; color: white; }
+        .btn-clear:hover { background-color: #c0392b; }
+
+        /* Ukázka položky v historii (zatím jen statická) */
+        .history-item {
+            background: white;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .history-item strong { display: block; margin-bottom: 5px; }
+
+/* Nové styly pro obrázky v historii */
+        .history-img {
+            width: 100%;       /* Roztáhnout na celou šířku panelu */
+            height: auto;
+            border: 1px solid #ccc;
+            margin-top: 5px;
+            background-color: white;
+        }
+        .status-ok { color: green; font-weight: bold; }
+        .status-fail { color: red; font-weight: bold; }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        Záhada: Které obrázky můžeme nakreslit jedním tahem?
+    </header>
+
+    <div id="main-container">
+        
+        <div id="workspace">
+            <h3>Tvoje plátno</h3>
+            <canvas id="graph-canvas" width="600" height="400"></canvas>
+            
+		<div class="controls">
+                <button class="btn-clear" onclick="undoLastStep()" id="btn-undo" style="background:#888; color:white;">Krok zpět</button> 
+                <button class="btn-clear" onclick="clearGraph()">Smazat vše</button>
+                <button class="btn-test" onclick="testGraph()">Otestovat obrázek</button>
+            </div>
+            <div style="margin-top: 10px; display: flex; gap: 10px;">
+                <button onclick="exportLog()" style="background:#3498db; color:white;">💾 Stáhnout DATA</button>
+                <button onclick="exportVisualReport()" style="background:#3498db; color:white;">📷 Stáhnout REPORT</button>
+            </div>
+
+            <p><i>Klikni pro bod, táhni myší pro čáru.</i></p>
+        </div>
+
+        <div id="history-panel">
+            <div id="history-header">Tvé minulé pokusy</div>
+            <div id="history-list">
+                <div class="history-item">
+                    <strong>Pokus č. 0 (Ukázka)</strong>
+                    Výsledek: <span style="color:green">JDE TO</span><br>
+                    <small>Čas přemýšlení: --</small>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+    // --- 1. PROMĚNNÉ (Tady se ukládá stav grafu) ---
+    const canvas = document.getElementById('graph-canvas');
+    const ctx = canvas.getContext('2d');
+
+    let nodes = []; // Seznam vrcholů: {id, x, y}
+    let edges = []; // Seznam hran: {from: id, to: id}
+
+    let history = []; 
+    const MAX_HISTORY_STEPS = 20; 
+    
+    // Proměnné pro ovládání myši
+    let isDragging = false;
+    let dragStartNode = null;
+    let mouseX = 0;
+    let mouseY = 0;
+
+// --- NOVÉ PROMĚNNÉ PRO LOGOVÁNÍ METAKOGNICE ---
+    let metacognitionLog = []; // Hlavní pole pro ukládání všech událostí (logfile)
+    let lastTestTimestamp = 0;   // Čas, kdy bylo naposledy kliknuto OTESTOVAT (pro Thinktime)
+    let previousGraphState = { nodesCount: 0, edgesCount: 0 }; // Ukládáme stav grafu po POSLEDNÍM testu (pro VOTAT)
+
+
+    // --- FUNKCE PRO LOGOVÁNÍ ---
+    // Tato funkce zaznamená každou akci uživatele a vypočítá Thinktime
+    function logAction(actionType, detail = {}) {
+        const now = Date.now();
+        
+        let logEntry = {
+            timestamp: now,
+            action: actionType,
+            nodes_count: nodes.length,
+            edges_count: edges.length,
+            ...detail,
+            thinktime_ms: null
+        };
+
+        // KONTROLA THINKTIME
+        // Pokud je lastTestTimestamp > 0, znamená to, že žák právě provedl první akci
+        // po obdržení feedbacku (po testu).
+        if (lastTestTimestamp > 0) {
+            logEntry.thinktime_ms = now - lastTestTimestamp;
+            lastTestTimestamp = 0; // Thinktime je spočítán, vynulujeme
+        }
+        
+        metacognitionLog.push(logEntry);
+        // Volitelné pro debug: console.log(logEntry);
+    }
+
+    // Nastavení vzhledu
+    const NODE_RADIUS = 15;
+    const NODE_COLOR = '#3498db';
+    const EDGE_COLOR = '#2c3e50';
+    const HIGHLIGHT_COLOR = '#e74c3c'; // Barva při tažení
+
+// Uloží aktuální stav grafu do historie
+    function saveState() {
+        // Vytvoříme hluboké kopie (aby se nepřepisovaly referencemi)
+        const newState = {
+            nodes: JSON.parse(JSON.stringify(nodes)),
+            edges: JSON.parse(JSON.stringify(edges))
+        };
+        
+        history.push(newState);
+        
+        // Omezení velikosti historie
+        if (history.length > MAX_HISTORY_STEPS) {
+            history.shift(); // Odstraníme nejstarší krok
+        }
+        
+        updateUndoButtonState();
+    }
+
+// Obnoví předchozí stav z historie
+    function undoLastStep() {
+        if (history.length > 1) { 
+            history.pop(); 
+            const prevState = history[history.length - 1]; 
+            
+            // Zajištění hluboké kopie při obnovení
+            nodes = JSON.parse(JSON.stringify(prevState.nodes)); 
+            edges = JSON.parse(JSON.stringify(prevState.edges)); 
+            
+            updateNodeDegrees(); 
+            drawGraph();
+            logAction('undo_action'); // <--- LOGOVÁNÍ
+        }
+        updateUndoButtonState();
+    }
+    
+    // Změní stav tlačítka Undo
+    function updateUndoButtonState() {
+        const btn = document.getElementById('btn-undo');
+        // Ponecháme tlačítko aktivní, pokud máme více než 1 stav v historii (tzn. můžeme se vrátit zpět)
+        btn.disabled = history.length <= 1; 
+    }
+
+
+    // --- 2. FUNKCE PRO KRESLENÍ (Vykreslí vše znovu a znovu) ---
+    function drawGraph() {
+        // Vyčistit plátno
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // A) Kreslení hran (hotových)
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = EDGE_COLOR;
+        
+        edges.forEach(edge => {
+            const start = nodes.find(n => n.id === edge.from);
+            const end = nodes.find(n => n.id === edge.to);
+            if (start && end) {
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+            }
+        });
+
+        // B) Kreslení právě tažené čáry (pokud táhnu)
+        if (isDragging && dragStartNode) {
+            ctx.beginPath();
+            ctx.strokeStyle = HIGHLIGHT_COLOR;
+            ctx.moveTo(dragStartNode.x, dragStartNode.y);
+            ctx.lineTo(mouseX, mouseY);
+            ctx.stroke();
+        }
+
+	// C) Kreslení vrcholů
+        nodes.forEach(node => {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, NODE_RADIUS, 0, 2 * Math.PI);
+            ctx.fillStyle = NODE_COLOR;
+            ctx.fill();
+            // Stupeň uvnitř (Místo ID vrcholu)
+            ctx.fillStyle = 'white';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(node.degree, node.x, node.y); // 
+            ctx.stroke();
+        });
+    }
+
+let attemptCounter = 0; // Počítadlo pokusů
+
+    function addToHistory(success, message) {
+        attemptCounter++;
+        
+        // 1. Vyfotíme Canvas (získáme obrázek jako textový řetězec)
+        const dataUrl = canvas.toDataURL(); 
+
+        // 2. Připravíme HTML pro jeden záznam
+        const statusClass = success ? 'status-ok' : 'status-fail';
+        const statusText = success ? 'JDE TO' : 'NEJDE TO';
+        
+        // Časová značka (pro realističnost)
+        const now = new Date();
+        const timeString = now.toLocaleTimeString();
+
+        const html = `
+            <div class="history-item">
+                <strong>Pokus č. ${attemptCounter}</strong> <small>(${timeString})</small><br>
+                Výsledek: <span class="${statusClass}">${statusText}</span><br>
+                <small>${message}</small>
+                <img src="${dataUrl}" class="history-img">
+            </div>
+        `;
+
+        // 3. Vložíme záznam do pravého panelu
+        const list = document.getElementById('history-list');
+        
+        // Vložíme nakonec (jako do chatu) - aby musel žák scrollovat nahoru pro starší
+        list.insertAdjacentHTML('beforeend', html);
+
+        // Automaticky odscrollovat dolů na nový výsledek
+        list.scrollTop = list.scrollHeight;
+    }
+
+    // --- 3. FUNKCE PRO INTERAKCI (Logika myši) ---
+    
+    // Pomocná funkce: Zjisti, jestli myš klikla na existující vrchol
+    function getNodeAtPos(x, y) {
+        return nodes.find(node => {
+            // Pythagorova věta - vzdálenost kliku od středu kruhu
+            const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+            return distance <= NODE_RADIUS;
+        });
+    }
+
+// KLIKNUTÍ (Mousedown)
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const clickedNode = getNodeAtPos(x, y);
+
+        if (clickedNode) { 
+            // Klikl jsem na existující uzel -> Začínám táhnout hranu
+            isDragging = true;
+            dragStartNode = clickedNode;
+            logAction('start_drag', { node_id: clickedNode.id });
+        } else { // Klikl jsem do prázdna -> Vytvořím nový uzel
+            const newNode = {
+                id: nodes.length > 0 ? Math.max(...nodes.map(n => n.id)) + 1 : 1,
+                x: x,
+                y: y,
+                degree: 0 
+            };
+            nodes.push(newNode);
+            
+            saveState(); // Uložit nový stav po přidání uzlu
+            drawGraph(); 
+	    logAction('add_node', { node_id: newNode.id });
+        }
+    });
+
+    // POHYB (Mousemove)
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouseX = e.clientX - rect.left;
+        mouseY = e.clientY - rect.top;
+
+        if (isDragging) {
+            drawGraph(); // Překreslujeme čáru, která následuje myš
+        }
+    });
+
+// PUŠTĚNÍ (Mouseup)
+    canvas.addEventListener('mouseup', (e) => {
+        if (isDragging) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const targetNode = getNodeAtPos(x, y);
+
+		let graphChanged = false;
+		let actionDetail = {};
+
+            // 1. Zkontrolujeme, zda jsme pustili nad uzlem A zda uzel není ten startovní
+            if (targetNode && targetNode.id !== dragStartNode.id) {
+                
+                const fromId = dragStartNode.id;
+                const toId = targetNode.id;
+
+                // 2. Najdeme index existující hrany (hrana je neorientovaná)
+                const existingEdgeIndex = edges.findIndex(edge => 
+                    (edge.from === fromId && edge.to === toId) ||
+                    (edge.from === toId && edge.to === fromId)
+                );
+
+                if (existingEdgeIndex !== -1) {
+                    // **MAZÁNÍ HRANY:** Hrana existuje, odstraníme ji.
+                    edges.splice(existingEdgeIndex, 1);
+			graphChanged = true;
+			actionDetail = { edge_action: 'removed', from: fromId, to: toId };
+                } else {
+                    // **PŘIDÁNÍ HRANY:** Hrana neexistuje, přidáme ji.
+                    edges.push({ from: fromId, to: toId });
+			graphChanged = true;
+			actionDetail = { edge_action: 'added', from: fromId, to: toId };
+                }
+
+		if (graphChanged) {
+                    updateNodeDegrees(); 
+                    saveState(); // <-- NOVÉ: Uložit stav po změně hrany
+		    logAction('change_edge', actionDetail);
+                }
+            }
+
+            isDragging = false;
+            dragStartNode = null;
+            drawGraph(); // Finální překreslení s novým stavem
+	    logAction('end_drag');
+        }
+    });
+
+
+// Smazat vše
+    function clearGraph() {
+        nodes = [];
+        edges = [];
+        updateNodeDegrees(); 
+        saveState(); 
+        drawGraph();
+	logAction('clear_graph');
+        previousGraphState = { nodesCount: 0, edgesCount: 0 };
+    }    
+
+
+// Pomocná funkce: Znovu přepočítá stupeň pro každý vrchol
+    function updateNodeDegrees() {
+        // Nejprve vynulujeme všechny stupně
+        nodes.forEach(n => n.degree = 0);
+        
+        // Pak projdeme všechny hrany a zvýšíme stupeň u obou konců
+        edges.forEach(edge => {
+            const nodeFrom = nodes.find(n => n.id === edge.from);
+            const nodeTo = nodes.find(n => n.id === edge.to);
+
+            if (nodeFrom) nodeFrom.degree++;
+            if (nodeTo) nodeTo.degree++;
+        });
+    }
+
+// --- 4. LOGIKA (Matematika Eulerovských tahů) - BEZ VYSKAKOVACÍCH OKEN ---
+
+    function testGraph() {
+        // 1. Pojistka: Prázdný graf
+        if (nodes.length < 2 || edges.length === 0) {
+            alert("Nakresli alespoň dva body a jednu čáru.");
+            logAction('test_graph', { result: 'fail', reason: 'empty_graph' });
+            return;
+        }
+
+        // 2. Spočítat stupně vrcholů
+        let degrees = {};
+        nodes.forEach(n => degrees[n.id] = 0);
+
+        edges.forEach(edge => {
+            degrees[edge.from]++;
+            degrees[edge.to]++;
+        });
+
+        // --- KONTROLA: IZOLOVANÉ BODY ---
+        let isolatedNodes = nodes.filter(n => degrees[n.id] === 0);
+        
+        if (isolatedNodes.length > 0) {
+            logAction('test_graph', { result: 'fail', reason: 'isolated_node' });
+            lastTestTimestamp = Date.now();
+            
+            // Fotka pro report
+            const imgData = canvas.toDataURL(); 
+            logAction('test_graph_fail_snapshot', { img_snapshot: imgData });
+            addToHistory(false, "");
+            return;
+        }
+
+        // 3. Zjistit počet vrcholů s lichým stupněm
+        let oddVerticesCount = 0;
+        for (let id in degrees) {
+            if (degrees[id] % 2 !== 0) {
+                oddVerticesCount++;
+            }
+        }
+
+        // 4. Kontrola souvislosti
+        if (!isGraphConnected(degrees)) {
+            const imgData = canvas.toDataURL();
+            logAction('test_graph', { 
+                result: 'fail', 
+                reason: 'disconnected',
+                img_snapshot: imgData 
+            });
+            lastTestTimestamp = Date.now(); 
+            addToHistory(false, "");
+            return;
+        }
+
+        // 5. Vyhodnocení podle Eulera
+        let success = (oddVerticesCount === 0 || oddVerticesCount === 2);
+        let msg = "";
+
+        if (success) {
+            msg = oddVerticesCount === 0 ? "" : "";
+        } else {
+            msg = ``;
+        }
+
+        // --- MĚŘENÍ VOTAT ---
+        let currentGraphState = { nodesCount: nodes.length, edgesCount: edges.length };
+        let nodeDiff = Math.abs(currentGraphState.nodesCount - previousGraphState.nodesCount);
+        let edgeDiff = Math.abs(currentGraphState.edgesCount - previousGraphState.edgesCount);
+        
+        let votat_applied = (nodeDiff === 0 && edgeDiff === 1) || (edgeDiff === 0 && nodeDiff === 1);
+        
+        // FOTKA PRO LOG
+        const imgData = canvas.toDataURL(); 
+
+        // Uložit do historie (vizuální panel)
+        addToHistory(success, msg);
+        
+        // LOGOVÁNÍ DO SOUBORU
+        logAction('test_graph', { 
+            result: success ? 'pass' : 'fail', 
+            votat: votat_applied, 
+            node_diff: nodeDiff,
+            edge_diff: edgeDiff,
+            img_snapshot: imgData 
+        });
+
+        lastTestTimestamp = Date.now();
+        previousGraphState = currentGraphState; 
+    }
+
+    // Pomocná funkce: Zkontroluje, zda se z jednoho bodu dostaneme do všech ostatních
+    function isGraphConnected(degrees) {
+        // Najdeme všechny body, které mají alespoň jednu hranu
+        let activeNodeIds = nodes.filter(n => degrees[n.id] > 0).map(n => n.id);
+        
+        if (activeNodeIds.length === 0) return true; // Žádné hrany = technicky spojeno
+
+        // Začneme prohledávat od prvního aktivního bodu
+        let startId = activeNodeIds[0];
+        let visited = new Set();
+        let queue = [startId];
+
+        while (queue.length > 0) {
+            let currentId = queue.shift();
+            if (visited.has(currentId)) continue;
+            visited.add(currentId);
+
+            // Najdeme sousedy
+            edges.forEach(edge => {
+                if (edge.from === currentId && !visited.has(edge.to)) queue.push(edge.to);
+                if (edge.to === currentId && !visited.has(edge.from)) queue.push(edge.from);
+            });
+        }
+
+        // Pokud jsme navštívili všechny aktivní body, je graf spojený
+        return activeNodeIds.every(id => visited.has(id));
+    }
+
+// --- MĚŘENÍ SCROLLINGU (MONITOROVÁNÍ) ---
+    const historyList = document.getElementById('history-list');
+    let scrollStartTimestamp = 0;
+
+    historyList.addEventListener('scroll', () => {
+        // Logování startu scrollování
+        if (scrollStartTimestamp === 0) {
+            scrollStartTimestamp = Date.now();
+            logAction('scroll_start');
+        }
+        // Při každém scrollu nastavíme timeout, aby se 'scroll_end' logoval až po pauze.
+        clearTimeout(historyList.scrollTimeout);
+        historyList.scrollTimeout = setTimeout(() => {
+            if (scrollStartTimestamp !== 0) {
+                const duration = Date.now() - scrollStartTimestamp;
+                logAction('scroll_end', { duration_ms: duration });
+                scrollStartTimestamp = 0;
+            }
+        }, 300); // 300 ms pauza na to, aby se to považovalo za konec scrollování
+    });
+
+// --- 5. INICIALIZACE ---
+
+    // První uložení stavu a vypnutí tlačítka Undo
+    saveState();
+
+// --- FUNKCE PRO EXPORT DAT (CSV - Čistá data pro Excel/SPSS) ---
+    function exportLog() {
+        if (metacognitionLog.length === 0) {
+            alert("Nemám žádná data, otestujte alespoň jeden obrázek.");
+            return;
+        }
+
+        // Definujeme sloupce, které chceme v Excelu (pořadí)
+        const columns = ['timestamp', 'action', 'result', 'thinktime_ms', 'votat', 'nodes_count', 'edges_count', 'duration_ms'];
+        const header = columns.join(';');
+
+        const csvRows = metacognitionLog.map(row => {
+            return columns.map(col => {
+                let val = row[col];
+                // Pokud hodnota neexistuje, necháme prázdné
+                if (val === undefined || val === null) return "";
+                // Nahradíme tečky za čárky u čísel (pro český Excel), pokud je potřeba
+                return String(val);
+            }).join(';');
+        });
+
+        const finalCsv = [header, ...csvRows].join('\n');
+
+        // Stažení
+        const blob = new Blob(["\ufeff", finalCsv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "data_metakognice_" + Date.now() + ".csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+
+// --- FUNKCE PRO VIZUÁLNÍ REPORT S OBRÁZKY (HTML) ---
+    function exportVisualReport() {
+        if (metacognitionLog.length === 0) {
+            alert("Nemám žádná data, otestuje alespoň jeden obrázek.");
+            return;
+        }
+
+        let htmlContent = `
+        <html>
+        <head>
+            <meta charset='utf-8'>
+            <title>Vizuální Report Metakognice</title>
+            <style>
+                body { font-family: sans-serif; padding: 20px; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+                th { background-color: #f2f2f2; }
+                .img-cell img { width: 150px; border: 1px solid #999; }
+                .pass { color: green; font-weight: bold; }
+                .fail { color: red; font-weight: bold; }
+            </style>
+        </head>
+        <body>
+            <h2>Report průchodu žáka</h2>
+            <p>Datum: ${new Date().toLocaleString()}</p>
+            <table>
+                <tr>
+                    <th>Čas</th>
+                    <th>Akce</th>
+                    <th>Detaily (Thinktime, VOTAT)</th>
+                    <th>Snímek grafu</th>
+                </tr>
+        `;
+
+        // Projdeme log a vytvoříme řádky tabulky
+        metacognitionLog.forEach(row => {
+            const time = new Date(row.timestamp).toLocaleTimeString();
+            let details = "";
+            let imageHtml = "";
+
+            // Formátování detailů do čitelné podoby
+            if (row.thinktime_ms) details += `<strong>Thinktime:</strong> ${row.thinktime_ms} ms<br>`;
+            if (row.action === 'test_graph') {
+                details += `Výsledek: <span class="${row.result}">${row.result}</span><br>`;
+                details += `VOTAT: ${row.votat ? 'ANO' : 'NE'}<br>`;
+            }
+            if (row.action === 'scroll_end') details += `Délka scrollování: ${row.duration_ms} ms`;
+
+            // Pokud záznam obsahuje fotku, zobrazíme ji
+            if (row.img_snapshot) {
+                imageHtml = `<img src="${row.img_snapshot}">`;
+            }
+
+            htmlContent += `
+                <tr>
+                    <td>${time}</td>
+                    <td>${row.action}</td>
+                    <td>${details}</td>
+                    <td class="img-cell">${imageHtml}</td>
+                </tr>
+            `;
+        });
+
+        htmlContent += `</table></body></html>`;
+
+        // Stažení souboru
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "vizualni_report_" + Date.now() + ".html";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+</script>
+
+</body>
+
+</html>
+
+
+
